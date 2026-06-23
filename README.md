@@ -19,7 +19,7 @@ A simple realtime chat application built with Node.js, Express, MongoDB and Sock
 - Realtime messaging with Socket.IO
 - User authentication and validation
 - Avatar upload and management
-- Create conversations and add users
+- Create conversations and CRUD users
 - Server-side input validation and error handling
 
 ## 🧩 Tech Stack
@@ -77,9 +77,8 @@ Open http://localhost:3000 in your browser.
 ## 🧪 Default Test Users
 
 - **User1**
-
-  - Email: `kien@bdf.com`
-  - Password: `123`
+  - Email: `phuoc@gmail.com`
+  - Password: `Phuoc2005@`
 
 - **User2**
   - Email: `khanh@gmail.com`

@@ -1,5 +1,7 @@
 // external imports
 const createError = require("http-errors");
+const { unlink } = require("fs");
+const path = require("path");
 // internal imports
 const User = require("../models/People");
 const Conversation = require("../models/Conversation");
@@ -103,9 +105,22 @@ async function getMessages(req, res, next) {
       conversation_id: req.params.conversation_id,
     }).sort("-createdAt");
 
-    const { participant } = await Conversation.findById(
-      req.params.conversation_id
-    );
+    const conversation = await Conversation.findOne({
+      _id: req.params.conversation_id,
+      $or: [
+        { "creator.id": req.user.userid },
+        { "participant.id": req.user.userid },
+      ],
+    });
+
+    if (!conversation) {
+      throw createError("Conversation not found!");
+    }
+
+    const participant =
+      conversation.creator.id.toString() === req.user.userid
+        ? conversation.participant
+        : conversation.creator;
 
     res.status(200).json({
       data: {
@@ -130,6 +145,18 @@ async function getMessages(req, res, next) {
 async function sendMessage(req, res, next) {
   if (req.body.message || (req.files && req.files.length > 0)) {
     try {
+      const conversation = await Conversation.findOne({
+        _id: req.body.conversationId,
+        $or: [
+          { "creator.id": req.user.userid },
+          { "participant.id": req.user.userid },
+        ],
+      });
+
+      if (!conversation) {
+        throw createError("Conversation not found!");
+      }
+
       // save message text/attachment in database
       let attachments = null;
 
@@ -158,6 +185,9 @@ async function sendMessage(req, res, next) {
       });
 
       const result = await newMessage.save();
+      await Conversation.findByIdAndUpdate(req.body.conversationId, {
+        last_updated: Date.now(),
+      });
 
       // emit socket event
       global.io.emit("new_message", {
@@ -196,10 +226,71 @@ async function sendMessage(req, res, next) {
   }
 }
 
+// delete conversation
+async function deleteConversation(req, res, next) {
+  try {
+    const conversation = await Conversation.findOneAndDelete({
+      _id: req.params.conversation_id,
+      $or: [
+        { "creator.id": req.user.userid },
+        { "participant.id": req.user.userid },
+      ],
+    });
+
+    if (!conversation) {
+      return res.status(404).json({
+        errors: {
+          common: {
+            msg: "Conversation not found",
+          },
+        },
+      });
+    }
+
+    const messages = await Message.find({
+      conversation_id: req.params.conversation_id,
+    });
+
+    messages.forEach((message) => {
+      if (message.attachment && message.attachment.length > 0) {
+        message.attachment.forEach((attachment) => {
+          unlink(
+            path.join(__dirname, `/../public/uploads/attachments/${attachment}`),
+            (err) => {
+              if (err) console.log(err);
+            },
+          );
+        });
+      }
+    });
+
+    await Message.deleteMany({
+      conversation_id: req.params.conversation_id,
+    });
+
+    global.io.emit("conversation_deleted", {
+      conversation_id: req.params.conversation_id,
+    });
+
+    res.status(200).json({
+      message: "Conversation deleted successfully!",
+    });
+  } catch (err) {
+    res.status(500).json({
+      errors: {
+        common: {
+          msg: err.message,
+        },
+      },
+    });
+  }
+}
+
 module.exports = {
   getInbox,
   searchUser,
   addConversation,
   getMessages,
   sendMessage,
+  deleteConversation,
 };

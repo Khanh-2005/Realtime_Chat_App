@@ -20,7 +20,13 @@
         </thead>
         <tbody id="users-table">
           <% users.forEach(function(user) { %>
-            <tr id="<%= user._id %>">
+            <tr
+              id="<%= user._id %>"
+              data-name="<%= user.name %>"
+              data-email="<%= user.email %>"
+              data-mobile="<%= user.mobile %>"
+              data-avatar="<%= user.avatar || '' %>"
+            >
               <td class="name">
                 <% if (user.avatar) { %>
                   <img src="./uploads/avatars/<%= user.avatar %>" />
@@ -31,10 +37,11 @@
                         <%= user.name %>
                       </span>
               </td>
-              <td>
+              <td class="email">
                 <%= user.email %>
               </td>
               <td class="manage">
+                <img src="./images/edit.svg" alt="Edit" onclick="openEditModal('<%= user._id %>')" />
                 <img src="./images/trash.png" alt="Delete" onclick="deleteUser('<%= user._id %>')" />
               </td>
             </tr>
@@ -43,6 +50,7 @@
     </div>
   </div>
   <%- include('./partials/add-user-modal.ejs'); %>
+  <%- include('./partials/edit-user-modal.ejs'); %>
 
     <script>
       // toasts

@@ -3,10 +3,25 @@ const uploader = require("../../utilities/multipleUploader");
 function attachmentUpload(req, res, next) {
   const upload = uploader(
     "attachments",
-    ["image/jpeg", "image/jpg", "image/png"],
-    1000000,
+    [
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/gif",
+      "application/pdf",
+      "text/plain",
+      "application/zip",
+      "application/x-zip-compressed",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-powerpoint",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ],
+    5000000,
     2,
-    "Only .jpg, jpeg or .png format allowed!"
+    "Only image, pdf, text, zip or office document files are allowed!"
   );
 
   // call the middleware function

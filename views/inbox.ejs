@@ -7,7 +7,7 @@
         <% data.forEach(function(conversation) { %>
           <!-- conversation creator is same to logged in user, so we need to show participant name and avatar -->
           <% if(conversation.creator.id == loggedInUser.userid) { %>
-            <div class="conversation" onclick="getMessages('<%= conversation._id %>', '<%= conversation.participant.name %>')">
+            <div class="conversation" id="conversation-<%= conversation._id %>" onclick="getMessages('<%= conversation._id %>', '<%= conversation.participant.name %>')">
               <% if (conversation.participant.avatar) { %>
               <img src="./uploads/avatars/<%= conversation.participant.avatar %>" alt="<%= conversation.participant.name %>" />
               <% } else { %>
@@ -17,7 +17,7 @@
               <div class="conversation-date"><%= moment(conversation.last_updated).fromNow() %></div>
             </div>
           <% } else { %>
-            <div class="conversation" onclick="getMessages('<%= conversation._id %>', '<%= conversation.creator.name %>')">
+            <div class="conversation" id="conversation-<%= conversation._id %>" onclick="getMessages('<%= conversation._id %>', '<%= conversation.creator.name %>')">
               <% if (conversation.creator.avatar) { %>
               <img src="./uploads/avatars/<%= conversation.creator.avatar %>" alt="<%= conversation.creator.name %>" />
               <% } else { %>
@@ -41,7 +41,7 @@
 
       <div id="chat-title">
         <span id="conversation-partner"></span>
-        <img src="./images/trash.png" alt="Delete Conversation" />
+        <img src="./images/trash.png" alt="Delete Conversation" onclick="deleteConversation()" />
       </div>
 
       <!-- placeholder div if no messages are in messages area -->
@@ -65,6 +65,7 @@
     <script>
 
       const form = document.querySelector('#chat-form');
+      const attachmentInput = document.querySelector('#attachment');
       const messageContainer = document.querySelector('#chat-message-list');
       const chatTitleContainer = document.querySelector('#conversation-partner');
       const loggedinUserId = '<%= loggedInUser.userid %>';
@@ -74,6 +75,20 @@
 
       // socket initialization
       const socket = io('<%= process.env.APP_URL %>');
+
+      function isImageAttachment(filename) {
+        return /\.(jpg|jpeg|png|gif)$/i.test(filename);
+      }
+
+      function createAttachmentHTML(attachment) {
+        const attachmentUrl = `./uploads/attachments/${attachment}`;
+
+        if (isImageAttachment(attachment)) {
+          return `<img src="${attachmentUrl}" alt="${attachment}" /> `;
+        }
+
+        return `<a class="attachment-link" href="${attachmentUrl}" target="_blank" download>${attachment}</a> `;
+      }
 
       // handle new/live incoming message from socket
       socket.on("new_message", data => {
@@ -89,7 +104,7 @@
 
           if(data.message.attachment && data.message.attachment.length > 0) {
             data.message.attachment.forEach(attachment => {
-              attachments += `<img src="./uploads/attachments/${attachment}" /> `;
+              attachments += createAttachmentHTML(attachment);
             });
           }
 
@@ -115,6 +130,22 @@
 
           // append the inoming message to message area as last item
           document.querySelector('#chat-message-list > .message-row:first-child').insertAdjacentHTML('beforeBegin', messageHTML);
+        }
+      });
+
+      socket.on("conversation_deleted", data => {
+        const deletedConversation = document.querySelector(`#conversation-${data.conversation_id}`);
+
+        if (deletedConversation) {
+          deletedConversation.remove();
+        }
+
+        if (data.conversation_id == current_conversation_id) {
+          current_conversation_id = null;
+          participant = null;
+          form.style.visibility = 'hidden';
+          chatTitleContainer.textContent = '';
+          messageContainer.innerHTML = '<div class="nothing">select a conversation</div>';
         }
       });
 
@@ -153,7 +184,7 @@
 
                   if(message.attachment && message.attachment.length > 0) {
                     message.attachment.forEach(attachment => {
-                      attachments += `<img src="./uploads/attachments/${attachment}" /> `;
+                      attachments += createAttachmentHTML(attachment);
                     });
                   }
 
@@ -212,7 +243,63 @@
           sendMessageFailureToast.showToast();
         }
       }
+
+      attachmentInput.onchange = function () {
+        if (!current_conversation_id) {
+          const selectConversationToast = Toastify({
+            text: "Select a conversation first",
+            duration: 1000,
+          });
+
+          selectConversationToast.showToast();
+          attachmentInput.value = "";
+          return;
+        }
+
+        if (attachmentInput.files.length > 0) {
+          form.dispatchEvent(new Event("submit", { cancelable: true }));
+        }
+      };
       
+      async function deleteConversation() {
+        if (!current_conversation_id) {
+          return;
+        }
+
+        const deleteConversationFailureToast = Toastify({
+          text: "Error deleting conversation",
+          duration: 1000,
+        });
+
+        const deleteConversationSuccessToast = Toastify({
+          text: "Conversation deleted",
+          duration: 1000,
+        });
+
+        let response = await fetch(`/inbox/conversation/${current_conversation_id}`, {
+          method: "DELETE",
+        });
+
+        let result = await response.json();
+
+        if (result.errors) {
+          deleteConversationFailureToast.showToast();
+        } else {
+          deleteConversationSuccessToast.showToast();
+          const deletedConversation = document.querySelector(`#conversation-${current_conversation_id}`);
+
+          if (deletedConversation) {
+            deletedConversation.remove();
+          }
+
+          current_conversation_id = null;
+          participant = null;
+          form.style.visibility = 'hidden';
+          chatTitleContainer.textContent = '';
+          messageContainer.innerHTML = '<div class="nothing">select a conversation</div>';
+        }
+      }
+
     </script>
   </body>
 </html>

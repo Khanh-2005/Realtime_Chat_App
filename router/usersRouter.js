@@ -7,6 +7,7 @@ const User = require("../models/People");
 const {
   getUsers,
   addUsers,
+  editUser,
   removeUser,
 } = require("../controller/usersController");
 const decorateHtmlResponse = require("../middlewares/common/decorateHtmlResponse");
@@ -14,6 +15,8 @@ const avatarUploads = require("../middlewares/users/avatarUploads");
 const {
   addUserValidators,
   addUserValidationHandler,
+  editUserValidators,
+  editUserValidationHandler,
 } = require("../middlewares/users/userValidators");
 const { checkLogin } = require("../middlewares/common/checkLogin");
 
@@ -32,6 +35,16 @@ router.post(
   addUsers
 );
 
+// edit user
+router.put(
+  "/:id",
+  checkLogin,
+  avatarUploads,
+  editUserValidators,
+  editUserValidationHandler,
+  editUser
+);
+
 // remove user
-router.delete("/:id", removeUser);
+router.delete("/:id", checkLogin, removeUser);
 module.exports = router;

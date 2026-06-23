@@ -40,7 +40,7 @@ function uploader(
       fileSize: max_file_size,
     },
     fileFilter: (req, file, cb) => {
-      if (req.files.length > max_number_of_files) {
+      if ((req.files || []).length >= max_number_of_files) {
         cb(
           createError(
             `Maximum ${max_number_of_files} files are allowed to upload!`

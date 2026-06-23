@@ -52,6 +52,67 @@ async function addUsers(req, res, next) {
   }
 }
 
+// edit user
+async function editUser(req, res, next) {
+  try {
+    const updateData = {
+      name: req.body.name,
+      email: req.body.email,
+      mobile: req.body.mobile,
+    };
+
+    if (req.body.password) {
+      updateData.password = await bcrypt.hash(req.body.password, 10);
+    }
+
+    if (req.files && req.files.length > 0) {
+      updateData.avatar = req.files[0].filename;
+    }
+
+    const user = await User.findByIdAndUpdate(req.params.id, updateData, {
+      new: false,
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        errors: {
+          common: {
+            msg: "User not found",
+          },
+        },
+      });
+    }
+
+    if (updateData.avatar && user.avatar) {
+      unlink(
+        path.join(__dirname, `/../public/uploads/avatars/${user.avatar}`),
+        (err) => {
+          if (err) console.log(err);
+        },
+      );
+    }
+
+    res.status(200).json({
+      message: "User updated successfully",
+      user: {
+        _id: req.params.id,
+        name: updateData.name,
+        email: updateData.email,
+        mobile: updateData.mobile,
+        avatar: updateData.avatar || user.avatar || null,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({
+      errors: {
+        common: {
+          msg: "Couldn't update user",
+        },
+      },
+    });
+  }
+}
+
 // remove user
 async function removeUser(req, res, next) {
   try {
@@ -59,14 +120,28 @@ async function removeUser(req, res, next) {
       _id: req.params.id,
     });
 
+    if (!user) {
+      return res.status(404).json({
+        errors: {
+          common: {
+            msg: "User not found",
+          },
+        },
+      });
+    }
+
     if (user.avatar) {
       unlink(
         path.join(__dirname, `/../public/uploads/avatars/${user.avatar}`),
         (err) => {
           if (err) console.log(err);
-        }
+        },
       );
     }
+
+    res.status(200).json({
+      message: "User deleted successfully",
+    });
   } catch (err) {
     res.status(500).json({
       errors: {
@@ -81,5 +156,6 @@ async function removeUser(req, res, next) {
 module.exports = {
   getUsers,
   addUsers,
+  editUser,
   removeUser,
 };

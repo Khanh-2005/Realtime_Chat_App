@@ -1,0 +1,125 @@
+<div class="modal-wrapper" id="edit-user-modal">
+  <div class="modal">
+    <a href="#" onclick="closeEditModal()" class="modal-close">+</a>
+    <div class="modal-title">
+      <h2>Edit User</h2>
+    </div>
+    <div class="modal-body">
+      <form method="post" enctype="multipart/form-data" id="edit-user-form">
+        <input type="hidden" name="id" />
+
+        <input type="text" placeholder="enter name" name="name" />
+        <p class="error edit-name-error"></p>
+
+        <input type="text" placeholder="enter email" name="email" />
+        <p class="error edit-email-error"></p>
+
+        <input type="text" placeholder="enter mobile" name="mobile" />
+        <p class="error edit-mobile-error"></p>
+
+        <input type="password" placeholder="enter new password (optional)" name="password" />
+        <p class="error edit-password-error"></p>
+
+        <input type="file" name="avatar" />
+        <p class="error edit-avatar-error"></p>
+
+        <p class="error edit-common-error"></p>
+
+        <input type="submit" value="Update" />
+      </form>
+    </div>
+  </div>
+</div>
+<script>
+  const editModal = document.querySelector("#edit-user-modal");
+  const editForm = document.querySelector("#edit-user-form");
+
+  const editSuccessToast = Toastify({
+    text: "User was updated successfully!",
+    duration: 3000,
+  });
+
+  const editErrorToast = Toastify({
+    text: "Could not update the user!",
+    duration: 3000,
+  });
+
+  function closeEditModal() {
+    editModal.style.display = "none";
+    editForm.reset();
+    clearEditErrors();
+  }
+
+  function openEditModal(userId) {
+    const userRow = document.getElementById(userId);
+
+    editForm.id.value = userId;
+    editForm.name.value = userRow.dataset.name;
+    editForm.email.value = userRow.dataset.email;
+    editForm.mobile.value = userRow.dataset.mobile;
+    editForm.password.value = "";
+
+    editModal.style.display = "block";
+  }
+
+  function clearEditErrors() {
+    const errorPlaceholders = editForm.querySelectorAll("p.error");
+    for (let i = 0; i < errorPlaceholders.length; i++) {
+      errorPlaceholders[i].style.display = "none";
+      errorPlaceholders[i].textContent = "";
+    }
+
+    const inputErrors = editForm.querySelectorAll("input.error");
+    if (inputErrors.length > 0) {
+      for (let j = 0; j < inputErrors.length; j++) {
+        inputErrors[j].classList.remove("error");
+      }
+    }
+  }
+
+  editForm.onsubmit = async function (event) {
+    event.preventDefault();
+    clearEditErrors();
+
+    const userId = editForm.id.value;
+    const formData = new FormData(editForm);
+
+    let response = await fetch(`/users/${userId}`, {
+      method: "PUT",
+      body: formData,
+    });
+
+    let result = await response.json();
+
+    if (result.errors) {
+      Object.keys(result.errors).forEach((fieldName) => {
+        if (editForm[fieldName]) {
+          editForm[fieldName].classList.add("error");
+        }
+
+        const errorPlaceholder = document.querySelector(`.edit-${fieldName}-error`);
+        if (errorPlaceholder) {
+          errorPlaceholder.textContent = result.errors[fieldName].msg;
+          errorPlaceholder.style.display = "block";
+        }
+      });
+      editErrorToast.showToast();
+    } else {
+      const userRow = document.getElementById(userId);
+      const user = result.user;
+
+      userRow.dataset.name = user.name;
+      userRow.dataset.email = user.email;
+      userRow.dataset.mobile = user.mobile;
+      userRow.dataset.avatar = user.avatar || "";
+      userRow.querySelector(".name span").textContent = user.name;
+      userRow.querySelector(".email").textContent = user.email;
+      userRow.querySelector(".name img").src = user.avatar
+        ? `./uploads/avatars/${user.avatar}`
+        : "./images/nophoto.png";
+
+      editSuccessToast.showToast();
+      closeEditModal();
+    }
+  };
+</script>
