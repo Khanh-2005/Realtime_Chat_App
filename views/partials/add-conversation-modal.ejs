@@ -6,6 +6,24 @@
     </div>
     <div class="modal-body">
       <form id="add-conversation-form">
+        <div class="conversation-type">
+          <label>
+            <input type="radio" name="conversation_type" value="single" checked />
+            1:1
+          </label>
+          <label>
+            <input type="radio" name="conversation_type" value="group" />
+            Group
+          </label>
+        </div>
+        <input
+          type="text"
+          placeholder="group name"
+          name="group_name"
+          id="group-name"
+          class="hide"
+          autocomplete="off"
+        />
         <input
           type="text"
           placeholder="search user by name or email or mobile"
@@ -14,8 +32,9 @@
           autocomplete="off"
         />
         <p class="error"></p>
+        <div class="selected-users hide"></div>
         <div class="search_users"></div>
-        <input type="submit" value="Submit" class="hide" />
+        <input type="submit" value="Submit" />
       </form>
     </div>
   </div>
@@ -26,8 +45,12 @@
   let typingTimer;
   const doneTypingInterval = 500;
   const input = document.querySelector("input#user");
+  const groupNameInput = document.querySelector("#group-name");
+  const conversationTypeInputs = document.querySelectorAll("input[name='conversation_type']");
+  const selectedUsersContainer = document.querySelector(".selected-users");
   const conversation_list = document.querySelector("#conversation-list");
   let users_placeholder = document.querySelector(".search_users");
+  let selectedUsers = [];
 
   // conversation created failure toast
   const conversationFailureToast = Toastify({
@@ -40,10 +63,27 @@
     // reset
     users_placeholder.style.display = "none";
     input.value = "";
+    groupNameInput.value = "";
+    selectedUsers = [];
+    renderSelectedUsers();
   }
   function openModal() {
     modal.style.display = "block";
   }
+
+  function getConversationType() {
+    return document.querySelector("input[name='conversation_type']:checked").value;
+  }
+
+  conversationTypeInputs.forEach((typeInput) => {
+    typeInput.addEventListener("change", function () {
+      const isGroup = getConversationType() === "group";
+      groupNameInput.classList.toggle("hide", !isGroup);
+      selectedUsersContainer.classList.toggle("hide", !isGroup);
+      selectedUsers = [];
+      renderSelectedUsers();
+    });
+  });
 
   //on keyup, start the countdown
   input.addEventListener("keyup", function () {
@@ -89,7 +129,7 @@
             ? "./uploads/avatars/" + user.avatar
             : "./images/nophoto.png";
 
-          generatedHtml += `<li onclick="createConversation('${user._id}', '${user.name}', '${user.avatar}')">
+          generatedHtml += `<li onclick="selectConversationUser('${user._id}', '${user.name}', '${user.avatar}')">
               <div class="user">
                 <div class="avatar">
                   <img src="${avatar}" />
@@ -105,27 +145,69 @@
     }
   }
 
+  function renderSelectedUsers() {
+    if (selectedUsers.length === 0) {
+      selectedUsersContainer.innerHTML = "";
+      return;
+    }
+
+    selectedUsersContainer.innerHTML = selectedUsers
+      .map(
+        (user) =>
+          `<span>${user.name}<button type="button" onclick="removeSelectedUser('${user.id}')">x</button></span>`
+      )
+      .join("");
+  }
+
+  function removeSelectedUser(userId) {
+    selectedUsers = selectedUsers.filter((user) => user.id !== userId);
+    renderSelectedUsers();
+  }
+
+  function selectConversationUser(participant_id, name, avatar) {
+    if (getConversationType() === "group") {
+      if (!selectedUsers.some((user) => user.id === participant_id)) {
+        selectedUsers.push({
+          id: participant_id,
+          name,
+          avatar: avatar != "undefined" ? avatar : null,
+        });
+      }
+
+      input.value = "";
+      users_placeholder.style.display = "none";
+      renderSelectedUsers();
+      return;
+    }
+
+    createConversation({
+      type: "single",
+      participant: name,
+      id: participant_id,
+      avatar: avatar != "undefined" ? avatar : null,
+    });
+  }
+
   // create Conversation
-  async function createConversation(participant_id, name, avatar) {
+  async function createConversation(payload) {
     try {
       const response = await fetch("/inbox/conversation", {
         method: "POST",
-        body: JSON.stringify({
-          participant: name,
-          id: participant_id,
-          avatar: avatar != "undefined" ? avatar : null,
-        }),
+        body: JSON.stringify(payload),
         headers: {
           "Content-type": "application/json; charset=UTF-8",
         },
       });
 
-      const result = response.json();
+      const result = await response.json();
 
       if (!result.errors) {
         // reset
         users_placeholder.style.display = "none";
-        input.value = name;
+        input.value = "";
+        groupNameInput.value = "";
+        selectedUsers = [];
+        renderSelectedUsers();
         // reload the page after 1 second
         setTimeout(() => {
           location.reload();
@@ -137,4 +219,23 @@
       conversationFailureToast.showToast();
     }
   }
+
+  document.querySelector("#add-conversation-form").onsubmit = function (event) {
+    event.preventDefault();
+
+    if (getConversationType() !== "group") {
+      return;
+    }
+
+    if (!groupNameInput.value.trim() || selectedUsers.length === 0) {
+      conversationFailureToast.showToast();
+      return;
+    }
+
+    createConversation({
+      type: "group",
+      group_name: groupNameInput.value.trim(),
+      participants: selectedUsers.map((user) => user.id),
+    });
+  };
 </script>

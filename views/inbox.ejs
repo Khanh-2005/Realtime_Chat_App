@@ -1,13 +1,20 @@
 <%- include('./partials/header.ejs'); %>
     <div id="chat-container">
       <div id="search-container">
-        <input type="text" placeholder="Search" />
+        <input type="text" placeholder="Search" id="conversation-search" autocomplete="off" />
       </div>
       <div id="conversation-list">
         <% data.forEach(function(conversation) { %>
+          <% if(conversation.is_group) { %>
+            <div class="conversation" id="conversation-<%= conversation._id %>" data-title="<%= conversation.group_name %>" onclick="getMessagesFromList(this)">
+              <img src="./images/nophoto.png" alt="<%= conversation.group_name %>" />
+              <div class="title-text"><%= conversation.group_name %></div>
+              <div class="conversation-date"><%= moment(conversation.last_updated).fromNow() %></div>
+            </div>
+          <% } else { %>
           <!-- conversation creator is same to logged in user, so we need to show participant name and avatar -->
           <% if(conversation.creator.id == loggedInUser.userid) { %>
-            <div class="conversation" id="conversation-<%= conversation._id %>" onclick="getMessages('<%= conversation._id %>', '<%= conversation.participant.name %>')">
+            <div class="conversation" id="conversation-<%= conversation._id %>" data-title="<%= conversation.participant.name %>" onclick="getMessagesFromList(this)">
               <% if (conversation.participant.avatar) { %>
               <img src="./uploads/avatars/<%= conversation.participant.avatar %>" alt="<%= conversation.participant.name %>" />
               <% } else { %>
@@ -17,7 +24,7 @@
               <div class="conversation-date"><%= moment(conversation.last_updated).fromNow() %></div>
             </div>
           <% } else { %>
-            <div class="conversation" id="conversation-<%= conversation._id %>" onclick="getMessages('<%= conversation._id %>', '<%= conversation.creator.name %>')">
+            <div class="conversation" id="conversation-<%= conversation._id %>" data-title="<%= conversation.creator.name %>" onclick="getMessagesFromList(this)">
               <% if (conversation.creator.avatar) { %>
               <img src="./uploads/avatars/<%= conversation.creator.avatar %>" alt="<%= conversation.creator.name %>" />
               <% } else { %>
@@ -26,6 +33,7 @@
               <div class="title-text"><%= conversation.creator.name %></div>
               <div class="conversation-date"><%= moment(conversation.last_updated).fromNow() %></div>
             </div>
+          <% } %>
           <% } %>
         <% }); %>
         
@@ -66,6 +74,8 @@
 
       const form = document.querySelector('#chat-form');
       const attachmentInput = document.querySelector('#attachment');
+      const conversationSearchInput = document.querySelector('#conversation-search');
+      const conversationListContainer = document.querySelector('#conversation-list');
       const messageContainer = document.querySelector('#chat-message-list');
       const chatTitleContainer = document.querySelector('#conversation-partner');
       const loggedinUserId = '<%= loggedInUser.userid %>';
@@ -88,6 +98,34 @@
         }
 
         return `<a class="attachment-link" href="${attachmentUrl}" target="_blank" download>${attachment}</a> `;
+      }
+
+      function renderConversationList(conversations) {
+        if (!conversations || conversations.length === 0) {
+          conversationListContainer.innerHTML = '<div class="nothing"><img src="./images/no-conversation.svg"></div>';
+          return;
+        }
+
+        let conversationHTML = '';
+        conversations.forEach((conversation) => {
+          const avatar = conversation.avatar
+            ? `./uploads/avatars/${conversation.avatar}`
+            : './images/nophoto.png';
+          const title = conversation.title || 'Conversation';
+
+          conversationHTML += `<div class="conversation" id="conversation-${conversation._id}" data-title="${title}" onclick="getMessagesFromList(this)">
+              <img src="${avatar}" alt="${title}" />
+              <div class="title-text">${title}</div>
+              <div class="conversation-date">${moment(conversation.last_updated).fromNow()}</div>
+            </div>`;
+        });
+
+        conversationListContainer.innerHTML = conversationHTML;
+      }
+
+      function getMessagesFromList(conversationElement) {
+        const conversationId = conversationElement.id.replace('conversation-', '');
+        getMessages(conversationId, conversationElement.dataset.title);
       }
 
       // handle new/live incoming message from socket
@@ -148,6 +186,22 @@
           messageContainer.innerHTML = '<div class="nothing">select a conversation</div>';
         }
       });
+
+      let conversationSearchTimer;
+      conversationSearchInput.addEventListener('keyup', function () {
+        clearTimeout(conversationSearchTimer);
+        conversationSearchTimer = setTimeout(searchConversations, 400);
+      });
+
+      async function searchConversations() {
+        const searchText = conversationSearchInput.value.trim();
+        const response = await fetch(`/inbox/conversations/search?q=${encodeURIComponent(searchText)}`);
+        const result = await response.json();
+
+        if (!result.errors) {
+          renderConversationList(result.data);
+        }
+      }
 
       // get messages of a conversation
       async function getMessages(conversation_id, current_conversation_name){

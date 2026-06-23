@@ -8,15 +8,52 @@ const Conversation = require("../models/Conversation");
 const Message = require("../models/Message");
 const escape = require("../utilities/escape");
 
+function conversationAccessQuery(userId) {
+  return {
+    $or: [
+      { "creator.id": userId },
+      { "participant.id": userId },
+      { "members.id": userId },
+    ],
+  };
+}
+
+function getConversationTitle(conversation, userId) {
+  if (conversation.is_group) {
+    return conversation.group_name || "Group conversation";
+  }
+
+  return conversation.creator.id.toString() === userId
+    ? conversation.participant.name
+    : conversation.creator.name;
+}
+
+function getConversationAvatar(conversation, userId) {
+  if (conversation.is_group) {
+    return null;
+  }
+
+  return conversation.creator.id.toString() === userId
+    ? conversation.participant.avatar
+    : conversation.creator.avatar;
+}
+
+function formatConversation(conversation, userId) {
+  return {
+    _id: conversation._id,
+    title: getConversationTitle(conversation, userId),
+    avatar: getConversationAvatar(conversation, userId),
+    is_group: conversation.is_group || false,
+    last_updated: conversation.last_updated,
+  };
+}
+
 // get inbox page
 async function getInbox(req, res, next) {
   try {
-    const conversations = await Conversation.find({
-      $or: [
-        { "creator.id": req.user.userid },
-        { "participant.id": req.user.userid },
-      ],
-    });
+    const conversations = await Conversation.find(
+      conversationAccessQuery(req.user.userid)
+    ).sort("-last_updated");
     res.locals.data = conversations;
     res.render("inbox");
   } catch (err) {
@@ -70,22 +107,69 @@ async function searchUser(req, res, next) {
 // add conversation
 async function addConversation(req, res, next) {
   try {
-    const newConversation = new Conversation({
-      creator: {
-        id: req.user.userid,
-        name: req.user.username,
-        avatar: req.user.avatar || null,
-      },
-      participant: {
-        name: req.body.participant,
-        id: req.body.id,
-        avatar: req.body.avatar || null,
-      },
-    });
+    const creator = {
+      id: req.user.userid,
+      name: req.user.username,
+      avatar: req.user.avatar || null,
+    };
+
+    let newConversation;
+
+    if (req.body.type === "group") {
+      if (!req.body.group_name || !req.body.participants?.length) {
+        throw createError("Group name and members are required!");
+      }
+
+      const participantIds = [...new Set(req.body.participants)].filter(
+        (id) => id !== req.user.userid
+      );
+      const users = await User.find(
+        {
+          _id: { $in: participantIds },
+        },
+        "name avatar"
+      );
+
+      if (users.length === 0) {
+        throw createError("Select at least one member!");
+      }
+
+      newConversation = new Conversation({
+        creator,
+        members: [
+          creator,
+          ...users.map((user) => ({
+            id: user._id,
+            name: user.name,
+            avatar: user.avatar || null,
+          })),
+        ],
+        is_group: true,
+        group_name: req.body.group_name,
+      });
+    } else {
+      newConversation = new Conversation({
+        creator,
+        participant: {
+          name: req.body.participant,
+          id: req.body.id,
+          avatar: req.body.avatar || null,
+        },
+        members: [
+          creator,
+          {
+            name: req.body.participant,
+            id: req.body.id,
+            avatar: req.body.avatar || null,
+          },
+        ],
+      });
+    }
 
     const result = await newConversation.save();
     res.status(200).json({
       message: "Conversation was added successfully!",
+      conversation: formatConversation(result, req.user.userid),
     });
   } catch (err) {
     res.status(500).json({
@@ -107,18 +191,21 @@ async function getMessages(req, res, next) {
 
     const conversation = await Conversation.findOne({
       _id: req.params.conversation_id,
-      $or: [
-        { "creator.id": req.user.userid },
-        { "participant.id": req.user.userid },
-      ],
+      ...conversationAccessQuery(req.user.userid),
     });
 
     if (!conversation) {
       throw createError("Conversation not found!");
     }
 
-    const participant =
-      conversation.creator.id.toString() === req.user.userid
+    const participant = conversation.is_group
+      ? {
+          id: conversation._id,
+          name: conversation.group_name,
+          avatar: null,
+          is_group: true,
+        }
+      : conversation.creator.id.toString() === req.user.userid
         ? conversation.participant
         : conversation.creator;
 
@@ -126,6 +213,7 @@ async function getMessages(req, res, next) {
       data: {
         messages: messages,
         participant,
+        conversation: formatConversation(conversation, req.user.userid),
       },
       user: req.user.userid,
       conversation_id: req.params.conversation_id,
@@ -147,10 +235,7 @@ async function sendMessage(req, res, next) {
     try {
       const conversation = await Conversation.findOne({
         _id: req.body.conversationId,
-        $or: [
-          { "creator.id": req.user.userid },
-          { "participant.id": req.user.userid },
-        ],
+        ...conversationAccessQuery(req.user.userid),
       });
 
       if (!conversation) {
@@ -176,11 +261,17 @@ async function sendMessage(req, res, next) {
           name: req.user.username,
           avatar: req.user.avatar || null,
         },
-        receiver: {
-          id: req.body.receiverId,
-          name: req.body.receiverName,
-          avatar: req.body.avatar || null,
-        },
+        receiver: conversation.is_group
+          ? {
+              id: conversation._id,
+              name: conversation.group_name,
+              avatar: null,
+            }
+          : {
+              id: req.body.receiverId,
+              name: req.body.receiverName,
+              avatar: req.body.avatar || null,
+            },
         conversation_id: req.body.conversationId,
       });
 
@@ -231,10 +322,7 @@ async function deleteConversation(req, res, next) {
   try {
     const conversation = await Conversation.findOneAndDelete({
       _id: req.params.conversation_id,
-      $or: [
-        { "creator.id": req.user.userid },
-        { "participant.id": req.user.userid },
-      ],
+      ...conversationAccessQuery(req.user.userid),
     });
 
     if (!conversation) {
@@ -286,6 +374,72 @@ async function deleteConversation(req, res, next) {
   }
 }
 
+// search conversations
+async function searchConversation(req, res, next) {
+  const searchQuery = (req.query.q || "").trim();
+
+  try {
+    if (!searchQuery) {
+      const conversations = await Conversation.find(
+        conversationAccessQuery(req.user.userid)
+      ).sort("-last_updated");
+
+      return res.status(200).json({
+        data: conversations.map((conversation) =>
+          formatConversation(conversation, req.user.userid)
+        ),
+      });
+    }
+
+    const searchRegex = new RegExp(escape(searchQuery), "i");
+    const userConversationIds = (
+      await Conversation.find(conversationAccessQuery(req.user.userid), "_id")
+    ).map((conversation) => conversation._id);
+
+    const matchedMessages = await Message.find(
+      {
+        conversation_id: { $in: userConversationIds },
+        $or: [{ text: searchRegex }, { attachment: searchRegex }],
+      },
+      "conversation_id"
+    );
+
+    const messageConversationIds = matchedMessages.map(
+      (message) => message.conversation_id
+    );
+
+    const conversations = await Conversation.find({
+      _id: { $in: [...userConversationIds, ...messageConversationIds] },
+      $and: [
+        conversationAccessQuery(req.user.userid),
+        {
+          $or: [
+            { "creator.name": searchRegex },
+            { "participant.name": searchRegex },
+            { "members.name": searchRegex },
+            { group_name: searchRegex },
+            { _id: { $in: messageConversationIds } },
+          ],
+        },
+      ],
+    }).sort("-last_updated");
+
+    res.status(200).json({
+      data: conversations.map((conversation) =>
+        formatConversation(conversation, req.user.userid)
+      ),
+    });
+  } catch (err) {
+    res.status(500).json({
+      errors: {
+        common: {
+          msg: err.message,
+        },
+      },
+    });
+  }
+}
+
 module.exports = {
   getInbox,
   searchUser,
@@ -293,4 +447,5 @@ module.exports = {
   getMessages,
   sendMessage,
   deleteConversation,
+  searchConversation,
 };
